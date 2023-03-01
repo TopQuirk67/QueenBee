@@ -2,24 +2,13 @@ from dataclasses import dataclass
 from typing import List, Dict, Union
 import string
 from datetime import datetime
+from src.utils import Color
 
 class BeeParameters:
     max_tiles = 7
     min_tiles = 4
     
-class color:
-    PURPLE = '\033[95m'
-    CYAN = '\033[96m'
-    DARKCYAN = '\033[36m'
-    BLUE = '\033[94m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-    END = '\033[0m'
 
-    
 @dataclass
 class Word:
     word: str
@@ -100,15 +89,29 @@ class SolutionList:
 
 @dataclass
 class Puzzle:
-    center_tile: float
-    petal_tiles: list
     solution: SolutionList
     date_str: str
+    center_tile: str = None
+    petal_tiles: list = None
+    tiles: str = None
     date_format = '%Y-%m-%d'
         
     def __post_init__(self):
-        self.center_tile = self.center_tile.upper()
-        self.petal_tiles = sorted([l.upper() for l in list(set(self.petal_tiles))])
+        if (self.tiles is None) and (self.center_tile is None or self.petal_tiles is None):
+            raise ValueError(f'Must contain tile specification through either tiles {self.tiles} or center+petal tiles {self.center_tile} {self.petal_tiles} ')
+        elif (self.tiles is not None) and ((self.center_tile is not None) or (self.petal_tiles is not None)):
+            raise ValueError(f'Must contain tile specification through either tiles {self.tiles} or center+petal tiles {self.center_tile} {self.petal_tiles} ')
+        elif (self.tiles is None):
+            if (self.petal_tiles is None) or (self.petal_tiles is None):
+                raise ValueError(f'Must contain tile specification center+petal tiles {self.center_tile} {self.petal_tiles} ')
+            else:            
+                self.center_tile = self.center_tile.upper()
+                self.petal_tiles = sorted([l.upper() for l in list(set(self.petal_tiles))])
+                self.tiles = self.center_tile+''.join(self.petal_tiles)
+        else:
+            self.center_tile = self.tiles[0].upper()
+            self.petal_tiles = sorted(list(self.tiles[1:].upper()))
+            self.tiles = self.center_tile+''.join(self.petal_tiles)
         if len(self.petal_tiles) != (BeeParameters.max_tiles-1) or len(self.center_tile) != 1 or len(set(self.petal_tiles).union(set(self.center_tile)))!=BeeParameters.max_tiles:
             raise ValueError(f'Error in puzzle specification {self.center_tile} length {len(self.center_tile)}; {self.petal_tiles} length {len(self.petal_tiles)}')
         if not isinstance(self.solution,SolutionList):
@@ -124,7 +127,8 @@ class Puzzle:
 
         
     def __str__(self):
-        prt_str = (f"{color.UNDERLINE}{self.center_tile}{color.END}{''.join(self.petal_tiles)}\n"
+        prt_str = (f"{Color.UNDERLINE}{self.center_tile}{Color.END}{''.join(self.petal_tiles)}\n"
+                  f"{self.tiles}\n"
                   f"{self.date_str}\n"
                   f"{self.solution}\n")
         return prt_str
@@ -144,5 +148,5 @@ class Puzzle:
         return(self.date.strftime("%Y-%m-%d"))
 
 
-
-
+if __name__ == '__main__':
+    pass

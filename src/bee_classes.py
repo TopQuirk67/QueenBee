@@ -1,13 +1,22 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from src.google_sheet_classes import Google_Sheet
+from src.utils import recursive_waiter
 from typing import List, Dict, Union
 import string
 from datetime import datetime
 from src.utils import Color
+import requests
+from bs4 import BeautifulSoup
+import json
+import re
+import pandas as pd
 
+# Classes related to the spelling bee puzzle
+# https://www.nytimes.com/puzzles/spelling-bee
 class BeeParameters:
     max_tiles = 7
     min_tiles = 4
-    
+
 
 @dataclass
 class Word:
@@ -86,6 +95,8 @@ class SolutionList:
             made_list.append(word.string())
         return made_list
 
+    def make_list_to_string(self):
+        return ' '.join(self.make_list())
 
 @dataclass
 class Puzzle:
@@ -145,8 +156,274 @@ class Puzzle:
         return alph_dict
     
     def datestr(self):
-        return(self.date.strftime("%Y-%m-%d"))
+        return(self.date.strftime(self.date_format))
+
+# Classes related to the solutions website
+# nytbee.com
+
+class NytBee_Parameters:
+    start_date = datetime(2018, 7, 29)
+
+@dataclass
+class NytBee_Solution:
+    date: datetime
+    date_str: str = None
+    waiter_settings: Dict = field(default_factory=lambda: {'maxdepth': 3, 'scaler':1, 'phighbin':0.2,'precursion':0.5})
+
+    def __post_init__(self):
+        if not isinstance(self.date,datetime):
+            raise ValueError(f'NytBee_Solution {self.date} must be a datetime')
+        elif self.date < NytBee_Parameters.start_date or self.date > datetime.today():
+            raise ValueError(f'NytBee_Solution {self.date} must be between {NytBee_Parameters.start_date} and today')
+        self.puzzle = None
+
+    def __str__(self):
+        return f'NytBee_Solution for {self.datestring()}\n {self.urlstring()}\n {self.puzzle}'
+    
+    def datestring(self):
+        (year, month, day) = (self.date.year, self.date.month, self.date.day)
+        return f'{year:02d}{month:02d}{day:02d}'
+    
+    def urlstring(self):
+        return f'https://nytbee.com/Bee_{self.datestring()}.html'
+    
+    def get_puzzle_from_url(self):
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0',
+        }
+        if self.waiter_settings is not None:
+            recursive_waiter(**self.waiter_settings)
+        page = requests.get(self.urlstring(), headers=headers)
+        soup = BeautifulSoup(page.text, 'html.parser')
+        if page.status_code != 200:
+            f'Error fetching page {self.urlstring()}'
+            self.puzzle = None
+            return None
+        
+        x = soup.find('script', type='text/javascript')
+        if (x):
+            regex = 'var docs_json = \'(.+?)\';'
+            y = json.loads(re.findall(regex,str(x))[0])
+            keys = [k for k in y.keys()]
+            key = keys[0]
+
+            for item in y[key]['roots']['references']:
+                if ('data' in item['attributes'].keys()):
+                    if ('words' in item['attributes']['data'].keys()):
+                        todays_lists = item['attributes']['data']['words']
+                    elif ('tips' in item['attributes']['data'].keys()):
+                        todays_lists = item['attributes']['data']['tips']
+                    else:
+                        print(f'Error can\'t find word list from nytbee {0} {0}')
+                        self.puzzle = None
+            nytbee = {}
+            all_words = []
+            for list_nletters in todays_lists:
+                if len(list_nletters)>0:
+                    nletters = len(list_nletters[0])
+                    nwords   = len(list_nletters)
+                    for word in list_nletters:
+                        all_words.append(word)
+                    nytbee[nletters]=nwords
+                    
+            x1 = soup.find_all('script', type='text/javascript')
+            if len(x1)>=5:
+                x1 = x1[5]
+                regex = 'var docs_json = \'(.+?)\';'
+                y1 = json.loads(re.findall(regex,str(x1))[0])
+                key = [k for k in y1.keys()][0]
+                for item in y1[key]['roots']['references']:
+                    if 'data' in item['attributes'].keys():
+                        center_tile = (chr(item['attributes']['data']['color'].index('firebrick')+ord('a')))
+
+                x2 = soup.find_all('script', type='text/javascript')[6]
+                y2 = json.loads(re.findall(regex,str(x2))[0])
+                key = [k for k in y2.keys()][0]
+                for item in y2[key]['roots']['references']:
+                    if 'data' in item['attributes'].keys():
+                        colors = item['attributes']['data']['color']
+                        puzz_tiles = [chr(idx+ord('a')) for idx,color in enumerate(colors) if color=='firebrick']
+                        # center_tile = (chr(item['attributes']['data']['color'].index('firebrick')+ord('a')))
+            else:
+                center_tile = set(all_words[0])
+                for word in all_words:
+                    center_tile = center_tile.intersection(set(word))
+                center_tile = ''.join(list(center_tile))
+                
+            puzz_tiles = list(set(''.join(all_words))-set(center_tile))
+            puzz_tiles.sort()
+            puzz_tiles.insert(0,center_tile)
+            if len(puzz_tiles)!=BeeParameters.max_tiles or len(center_tile)!=1:
+                print(f'Error scraping puzzle tiles {puzz_tiles} {center_tile}')
+
+            puzz_tiles.remove(center_tile)
+            puzz_tiles.sort()
+            puzz_tiles.insert(0,center_tile)
+            puzz_tiles=''.join(puzz_tiles)
+            date_str=self.date.strftime(Puzzle.date_format)
+            self.puzzle = Puzzle(tiles=puzz_tiles,solution=all_words,date_str=date_str)
+        else:
+            self.puzzle = None
+
+    def get_puzzle_from_input(self,puzzle):
+        self.puzzle = puzzle
+
+class Sbsolver_Parameters:
+    start_date = datetime(2018, 5, 9)
+
+@dataclass
+class Sbsolver_Solution:
+    date: datetime
+    date_str: str = None
+    waiter_settings: Dict = field(default_factory=lambda: {'maxdepth': 3, 'scaler':1, 'phighbin':0.2,'precursion':0.5})
+
+    def __post_init__(self):
+        if not isinstance(self.date,datetime):
+            raise ValueError(f'Sbsolver_Solution {self.date} must be a datetime')
+        elif self.date < Sbsolver_Parameters.start_date or self.date > datetime.today():
+            raise ValueError(f'Sbsolver_Solution {self.date} must be between {Sbsolver_Parameters.start_date} and today')
+        self.puzzle = None
+
+    def __str__(self):
+        return f'Sbsolver_Solution for {self.date}\n url: {self.urlstring()}\n {self.urlstring()}\n {self.puzzle}'
+    
+    def translate_date_to_index(self):
+        return 1+(self.date-Sbsolver_Parameters.start_date).days
+    
+    def urlstring(self):
+        return f"https://www.sbsolver.com/s/{self.translate_date_to_index()}"
+    
+    def get_puzzle_from_url(self):
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0',
+        }
+        if self.waiter_settings is not None:
+            recursive_waiter(**self.waiter_settings)
+        page = requests.get(self.urlstring(), headers=headers)
+        soup = BeautifulSoup(page.text, 'html.parser')
+
+        if page.status_code != 200:
+            print(f'Error fetching page {self.urlstring()}')
+            self.puzzle = None
+            return None
+
+        puzz_tiles = soup.find('input')['value']    
+        all_words = [item.a['href'].split('/')[-1] for item in soup.find_all('td', {"class": "bee-hover"})]
+        self.extracted_date = datetime.strptime(soup.find("meta", property="og:title")['content'].split(':')[0] ,'%B %d, %Y')
+        if self.extracted_date!=self.date:
+            print(f'Error scraping Sbsolver date mismatch {self.extracted_date} {self.date}')
+        if len(puzz_tiles)!=BeeParameters.max_tiles :
+            print(f'Error scraping puzzle tiles {puzz_tiles}')
+
+        date_str=self.date.strftime(Puzzle.date_format)
+        self.puzzle = Puzzle(tiles=puzz_tiles,solution=all_words,date_str=date_str)
+
+    def get_puzzle_from_input(self,puzzle):
+        self.puzzle = puzzle
+
+# TODO:
+@dataclass
+class Bee_DataBase:
+    google_sheet_id: str = None
+    google_sheet_name: str = None
+    google_sheet = Google_Sheet = None
+    start_date: datetime = None 
+    end_date: datetime = None
+    local: bool = False
+    df = None
+
+    def __post_init__(self):
+        self.google_sheet = Google_Sheet(google_sheet_name=self.google_sheet_name,google_sheet_id=self.google_sheet_id)
+        self.google_sheet.open_by_id()
+        self.google_sheet.read_to_df()
+        self.google_sheet_name = self.google_sheet.google_sheet_name
+        self.google_sheet_id = self.google_sheet.google_sheet_id
+        self.df = self.google_sheet.df
+        if len(self.df)==0:
+            print('Current bee database sheet is empty')
+        else:
+            if self.local:
+                self.timestampstr = self.timestamp()
+                self.write_db_to_local(final=False)
+            self.validate()
+
+    def __str__(self):
+        return f'Bee_Database for "{self.google_sheet_name}" "{self.google_sheet_id}"\n start:end date {self.start_date}:{self.end_date}\n{self.df}'
+
+    def validate(self):
+        df = pd.DataFrame({'date': pd.Series.dt.date,
+                        'tiles': pd.Series(dtype='str'),
+                        'solution': pd.Series(dtype='str'),})
+
+        # TODO? print(self.df['date'].is_monotonic_increasing)
+        for _,row in self.df.iterrows():
+            try:
+                date = pd.to_datetime(row['date'])
+                date_str = date.strftime(Puzzle.date_format)
+                solution = row['solution'].split(' ')
+                tiles = row['tiles']
+                puzzle = Puzzle(tiles=tiles,date_str=date_str,solution=solution)
+                d = {'date': [puzzle.date_str], 'tiles':[puzzle.tiles], 'solution':[puzzle.solution.make_list_to_string()]}
+                df = pd.concat([df, pd.DataFrame.from_dict(d, orient='columns')],  ignore_index=False, axis=0)
+            except:
+                print(f'Error validating Bee_Database {row["date"]} {row["tiles"]}')
+        self.df = df.sort_values(by='date',ascending=True)
+        self.start_date=self.df['date'].values[0]
+        self.end_date=self.df['date'].values[-1]
+
+    def update(self):
+        print(f'Method update not tested - CAUTION!')
+        if self.local:
+            self.write_db_to_local(final=True)
+        self.google_sheet.append_df(df=self.df)
+
+    def append(self):
+        print(f'Method not implemented')
+        # if self.local:
+        #     self.write_db_to_local(final=True)
+        pass
+
+    def overwrite(self):
+        self.google_sheet.write_df(df=self.df)
+        if self.local:
+            self.write_db_to_local(final=True)
+
+    def write_db_to_local(self,final):        
+        if final:
+            local_file = f'data/{self.google_sheet_name}-{self.timestampstr}.csv'
+        else:
+            local_file = f'data/{self.google_sheet_name}-{self.timestampstr}-BCK.csv'
+        self.df.to_csv(local_file,index=False)
+
+    def timestamp(self):
+        return datetime.now().strftime("%Y-%m-%d-%H%M%S")
+
+    def make_date_list(self):
+        if len(self.df)>0:
+            return list(self.df['date'])
 
 
 if __name__ == '__main__':
-    pass
+    test_puzz = Puzzle(center_tile='m',petal_tiles=list('nwedli'),#tiles='mnwedli',
+                    date_str='2023-01-25',solution=['mildew','mildewed','mine','mien'])
+    print(test_puzz)
+    # print(80*'$')
+    # s = NytBee_Solution(date=datetime(2022,1,22),waiter_settings=None)
+    # s.get_puzzle_from_url()
+    # print(s.puzzle)
+    # print(80*'$')
+    # db_sheet_id = os.environ.get('GOOGLE_SHEET_QBDB')
+    # db = Bee_DataBase(google_sheet_id=db_sheet_id)
+    # print(db.df)
+    # print(80*'$')
+    # db = Bee_DataBase(google_sheet_name="Spelling Bee Test Worksheet")
+    # print(db.df)
+    s2 = Sbsolver_Solution(date=datetime(2022,6,16),waiter_settings=None)
+    s2.get_puzzle_from_url()
+
+    print(s2)
+    # s.get_puzzle_from_input(puzzle=Puzzle(center_tile='m',petal_tiles=['n','w','e','d','l','i'],
+    #             date_str='2023-01-25',solution=['mildew','mildewed','mine','mien','mild']))
+
+    # print(s.puzzle.solution.make_list())

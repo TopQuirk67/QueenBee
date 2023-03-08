@@ -1,6 +1,7 @@
 import pytest
 
-from src.bee_classes import BeeParameters,Word,SolutionList,Puzzle
+from src.bee_classes import BeeParameters,Word,SolutionList,Puzzle,NytBee_Parameters,NytBee_Solution
+from datetime import datetime
 import string
 
 def test_valid_alphagram_lengths():
@@ -96,3 +97,15 @@ def test_puzz_error_solution_invalid():
         Puzzle(center_tile='m',petal_tiles=['n','w','e','d','l','i'],
                 date_str='2023-01-25',solution=['mildew','mildewed','mine','mien','hind'])
     assert str(e.value) == "SolutionList [Word(word='MILDEW'), Word(word='MILDEWED'), Word(word='MINE'), Word(word='MIEN'), Word(word='HIND')] has too many letters DEHILMNW, must have <= 7"
+
+def test_nytbee_puzzle_input_construction():
+    s = NytBee_Solution(date=datetime(2023,1,25))
+    s.get_puzzle_from_input(puzzle=Puzzle(center_tile='m',petal_tiles=['n','w','e','d','l','i'],
+                date_str='2023-01-25',solution=['mildew','mildewed','mine','mien','mild']))
+    assert s.puzzle.datestr() == '2023-01-25'
+    assert s.puzzle.solution.make_list() == ['MIEN', 'MILD', 'MILDEW', 'MILDEWED', 'MINE']
+
+def test_nytbee_puzzle_date_wrong():
+    with pytest.raises(ValueError) as e:
+        NytBee_Solution(date=datetime(2001,1,25))
+    assert str(e.value) == f"NytBee_Solution 2001-01-25 00:00:00 must be between 2018-07-29 00:00:00 and today"

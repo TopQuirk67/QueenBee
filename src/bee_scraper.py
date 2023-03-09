@@ -1,4 +1,4 @@
-from src.bee_classes import BeeParameters,Word,SolutionList,Puzzle,NytBee_Parameters,Sbsolver_Parameters,NytBee_Solution,Bee_DataBase
+from src.bee_classes import BeeParameters,Word,SolutionList,Puzzle,NytBee_Parameters,Sbsolver_Parameters,NytBee_Solution,Sbsolver_Solution,Bee_DataBase
 # from src.google_sheet_classes import Google_Sheet
 import pandas as pd
 import argparse
@@ -8,9 +8,29 @@ from datetime import datetime, date, timedelta
 # remove excess code from the __main__ of al these routines, especially class definitions
 # 
 
-def dates_iterable(start_date,end_date):
+def date_list(start_date,end_date):
     delta = timedelta(days=1)
-    return [d for d in ]
+    d_list = []
+    if start_date<min(NytBee_Parameters.start_date,Sbsolver_Parameters.start_date):
+        print(f'Warning {start_date} precedes data availability')
+        start_date=min(NytBee_Parameters.start_date,Sbsolver_Parameters.start_date)
+    if start_date>datetime.today():
+        print(f'Warning {start_date} must be today {datetime.today()} or earlier')
+        start_date=datetime.today()
+    d = start_date
+    while d <= end_date:
+        d_list.append(d)
+        d+=delta
+    return d_list
+
+def newly_scraped_dates_prior_to_last_db_date(db_df, new_df):
+    if db_df is None or new_df is None:
+        return False
+    elif len(db_df) == 0 or len(new_df) == 0:
+        return False
+    else:
+        return (len(set(new_df['date']).intersection(set(pd.to_datetime(db_df['date'])))))>0 or \
+            (min(new_df['date'].values))<=(max(pd.to_datetime(db_df['date'].values)))
 
 if __name__ == '__main__':
     ''' Default behavior: grab the specified solutions database
@@ -20,60 +40,58 @@ if __name__ == '__main__':
     if the only updates are at the end of the database, just update the page
     if the updates include dates that are in between prior solutions, warn that you will need to overwrite but just append.
     '''
-# TODO:
-# Functionalities we want:
-# - check the current db, and then scrape all missing solutions from nytbee, update append the db
-# - have argparse to take in the sheet
     parser = argparse.ArgumentParser(
         prog="bee_scraper",
         description="Scrape nytbee website solutions to the google sheet you input by sheet id",
     )
     parser.add_argument("-i", "--id", type=str, required=True, help="Google sheet id string for the the solutions database (must be setup already and have permissions)")
     parser.add_argument("-o", "--overwrite",action="store_true",default=False,help="overwrite the entire sheet")
-    parser.add_argument("-e", "--end_date",type=str,required=False,default=date.today().strftime(Puzzle.date_format),help="end_date; format=2022-01-25 (today if not specified)")
+    parser.add_argument("-e", "--end_date",type=str,required=False,default=datetime.today().strftime(Puzzle.date_format),help="end_date; format=2022-01-25 (today if not specified)")
     parser.add_argument("-s", "--start_date",type=str,required=False,default=Sbsolver_Parameters.start_date.strftime(Puzzle.date_format),help="start_date; format=2018-07-29 (first puzzle if not specified)")
     parser.add_argument("-v", "--verbose",required=False,action="store_true",default=False,help="Not implemented")
     parser.add_argument("-l", "--local",required=False,action="store_true",default=False,help="Write database versions to local files")
     args = parser.parse_args()
+    start_date_datetime = datetime.strptime(args.start_date,Puzzle.date_format)
+    earliest_possible_date = min(Sbsolver_Parameters.start_date,NytBee_Parameters.start_date)
+    if start_date_datetime < earliest_possible_date:
+        print(f'Resetting date to {earliest_possible_date} (earliest possible)')
+        start_date_datetime = earliest_possible_date 
+    end_date_datetime = datetime.strptime(args.end_date,Puzzle.date_format)
     db_google_sheet = Bee_DataBase(google_sheet_id=args.id,local=args.local)
-    print(db_google_sheet)
-    print(15*'dates-','\n',db_google_sheet.make_date_list())
-    # TODO: vet against start and end dates, set up method to get only the dates you need
-    # TODO: create method to compare data between the two websites and pick one; write out any mismatches
-    # TODO: eventually get the update method working for new data only. 
-    # TODO: start with a small date range and an empty sheet
-    # TODO: then disorder the sheet, try skipped fill-in dates, etc. 
-    # TODO: eventually empty out the sheet and just run a full overwrite.
-    # TODO: am I using all the argparses?
+    db_dates = db_google_sheet.make_datetime_list()
+
+    # TODO: am I using all the argparses: just verbose is missing
     # TODO: maybe more pytests
     # TODO: can I pytest google_sheet_class (currently empty test) or delete test file
+    # TODO: delete the QB test notebook
+    # TODO: delete excess print statements
+    # TODO: warning for missing dates in the finalized db when you validate.
+    
+    df = pd.DataFrame()
+    for d in date_list(start_date=start_date_datetime,end_date=end_date_datetime):
+        if d not in db_dates:
+            print(f'fetching data for date {d}')
+            nyt = NytBee_Solution(date=d)
+            nyt.get_puzzle_from_url()
+            sbs = Sbsolver_Solution(date=d)
+            sbs.get_puzzle_from_url()
+            if sbs.puzzle is None and nyt.puzzle is None:
+                print(f'No solution data available for date {d}')
+            elif sbs.puzzle is None:
+                puzzle = nyt.puzzle
+            elif nyt.puzzle is None:
+                puzzle = sbs.puzzle
+            elif nyt.puzzle == sbs.puzzle:
+                puzzle = nyt.puzzle
+            else:
+                print(f'Mismatched solutions for date {d} \n NYTBee \n {nyt}\n Sbsolver \n {sbs}')
+            d = {'date': [d], 'tiles':[puzzle.tiles], 'solution':[puzzle.solution.make_list_to_string()]}
+            df = pd.concat([df, pd.DataFrame.from_dict(d, orient='columns')],  ignore_index=False, axis=0)
+    if args.overwrite or newly_scraped_dates_prior_to_last_db_date(db_df = db_google_sheet.df, new_df = df):
+        df = pd.concat([df, db_google_sheet.df],  ignore_index=False, axis=0) # .sort_values(by='date',ascending=True)
+        db_google_sheet.update_df(df)
+        db_google_sheet.overwrite()
+    else:
+        db_google_sheet.append(df)
 
-    # test_sheet.append_df(df=tiny_df)
-    db_google_sheet.overwrite()
 
-    # end_date = datetime.date.today()
-    # delta = timedelta(days=1)
-
-
-
-
-    # put together and then randomize the list of dates we need to fetch
-    # this_date = start_date
-    # while this_date <= end_date:
-    #     (year, month, day) = (this_date.year, this_date.month, this_date.day)
-    #     datestring = f'{year:02d}{month:02d}{day:02d}'
-    #     url = f'https://nytbee.com/Bee_{datestring}.html'
-    #     # check if file already exists
-    #     filename = f'data/NYTbee__{datestring}.txt'
-    #     file_exists = os.path.exists(filename)
-    #     if file_exists:
-    #         pass
-    #     else:
-    #         recursive_waiter(phighbin=0.2,maxdepth=5,precursion=0.5,scaler=1)
-    #         print(f'Fetching data for {url}')
-    #         todays_lists,puzz_tiles = get_todays_lists(url)
-    #         if todays_lists:
-    #             write_file(puzz_tiles,todays_lists,filename)
-    #         else:
-    #             print(f"{bcolors.WARNING}Warning: Cannot find data for url {url}.{bcolors.ENDC}")
-    #     this_date += delta

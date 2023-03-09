@@ -3,7 +3,7 @@ from src.google_sheet_classes import Google_Sheet
 from src.utils import recursive_waiter
 from typing import List, Dict, Union
 import string
-from datetime import datetime
+from datetime import datetime, timedelta
 from src.utils import Color
 import requests
 from bs4 import BeautifulSoup
@@ -174,7 +174,7 @@ class NytBee_Solution:
         if not isinstance(self.date,datetime):
             raise ValueError(f'NytBee_Solution {self.date} must be a datetime')
         elif self.date < NytBee_Parameters.start_date or self.date > datetime.today():
-            raise ValueError(f'NytBee_Solution {self.date} must be between {NytBee_Parameters.start_date} and today')
+            print(f'NytBee_Solution {self.date} must be between {NytBee_Parameters.start_date} and today')
         self.puzzle = None
 
     def __str__(self):
@@ -275,13 +275,12 @@ class Sbsolver_Parameters:
 class Sbsolver_Solution:
     date: datetime
     date_str: str = None
-    waiter_settings: Dict = field(default_factory=lambda: {'maxdepth': 3, 'scaler':1, 'phighbin':0.2,'precursion':0.5})
-
+    waiter_settings: Dict = field(default_factory=lambda: {'t1':1.0,'t2':8.0,'t3':8.0,'t4':17.0, 'maxdepth': 3, 'scaler':1, 'phighbin':0.2,'precursion':0.5})
     def __post_init__(self):
         if not isinstance(self.date,datetime):
             raise ValueError(f'Sbsolver_Solution {self.date} must be a datetime')
         elif self.date < Sbsolver_Parameters.start_date or self.date > datetime.today():
-            raise ValueError(f'Sbsolver_Solution {self.date} must be between {Sbsolver_Parameters.start_date} and today')
+            print(f'Sbsolver_Solution {self.date} must be between {Sbsolver_Parameters.start_date} and today')
         self.puzzle = None
 
     def __str__(self):
@@ -327,10 +326,12 @@ class Sbsolver_Solution:
 class Bee_DataBase:
     google_sheet_id: str = None
     google_sheet_name: str = None
-    google_sheet = Google_Sheet = None
-    start_date: datetime = None 
-    end_date: datetime = None
+    google_sheet: Google_Sheet = None
+    start_date: str = None 
+    end_date: str = None
+    missing_datetimes_list = None
     local: bool = False
+    timestampstr = None
     df = None
 
     def __post_init__(self):
@@ -352,7 +353,7 @@ class Bee_DataBase:
         return f'Bee_Database for "{self.google_sheet_name}" "{self.google_sheet_id}"\n start:end date {self.start_date}:{self.end_date}\n{self.df}'
 
     def validate(self):
-        df = pd.DataFrame({'date': pd.Series.dt.date,
+        df = pd.DataFrame({'date': pd.Series(dtype='str'),
                         'tiles': pd.Series(dtype='str'),
                         'solution': pd.Series(dtype='str'),})
 
@@ -371,18 +372,20 @@ class Bee_DataBase:
         self.df = df.sort_values(by='date',ascending=True)
         self.start_date=self.df['date'].values[0]
         self.end_date=self.df['date'].values[-1]
+        self.missing_datetimes_list = self.missing_datetimes()
+        if len(self.missing_datetimes_list)>0:
+            print(f'DataBase Validation WARNING: missing dates\n')
+            for d in self.missing_datetimes_list:
+                print(d)
 
-    def update(self):
-        print(f'Method update not tested - CAUTION!')
+    def append(self,df):
+        # have to translate datetime to string so that it is JSON serializable
+        df['date']=df['date'].apply(lambda x: x.strftime(Puzzle.date_format))
+        self.google_sheet.append_df(df)
+        self.df = pd.concat([self.df, df],  ignore_index=False, axis=0)
+        self.validate()
         if self.local:
             self.write_db_to_local(final=True)
-        self.google_sheet.append_df(df=self.df)
-
-    def append(self):
-        print(f'Method not implemented')
-        # if self.local:
-        #     self.write_db_to_local(final=True)
-        pass
 
     def overwrite(self):
         self.google_sheet.write_df(df=self.df)
@@ -399,31 +402,30 @@ class Bee_DataBase:
     def timestamp(self):
         return datetime.now().strftime("%Y-%m-%d-%H%M%S")
 
-    def make_date_list(self):
+    def make_datestr_list(self):
         if len(self.df)>0:
             return list(self.df['date'])
 
+    def make_datetime_list(self):
+        if len(self.df)>0:
+            return list(pd.to_datetime(self.df['date']))
+        else:
+            return []
+        
+    def update_df(self,df):
+        self.df = df
+        self.validate()
+
+    def missing_datetimes(self):
+        delta = timedelta(days=1)
+        d_list = []
+        d = datetime.strptime(self.start_date, Puzzle.date_format)
+        while d <= datetime.strptime(self.end_date, Puzzle.date_format):
+            d_list.append(d)
+            d+=delta
+        d_list = [d.strftime(Puzzle.date_format) for d in d_list]
+        d_list = sorted(list(set(d_list)-set(self.df['date'])))
+        return d_list
 
 if __name__ == '__main__':
-    test_puzz = Puzzle(center_tile='m',petal_tiles=list('nwedli'),#tiles='mnwedli',
-                    date_str='2023-01-25',solution=['mildew','mildewed','mine','mien'])
-    print(test_puzz)
-    # print(80*'$')
-    # s = NytBee_Solution(date=datetime(2022,1,22),waiter_settings=None)
-    # s.get_puzzle_from_url()
-    # print(s.puzzle)
-    # print(80*'$')
-    # db_sheet_id = os.environ.get('GOOGLE_SHEET_QBDB')
-    # db = Bee_DataBase(google_sheet_id=db_sheet_id)
-    # print(db.df)
-    # print(80*'$')
-    # db = Bee_DataBase(google_sheet_name="Spelling Bee Test Worksheet")
-    # print(db.df)
-    s2 = Sbsolver_Solution(date=datetime(2022,6,16),waiter_settings=None)
-    s2.get_puzzle_from_url()
-
-    print(s2)
-    # s.get_puzzle_from_input(puzzle=Puzzle(center_tile='m',petal_tiles=['n','w','e','d','l','i'],
-    #             date_str='2023-01-25',solution=['mildew','mildewed','mine','mien','mild']))
-
-    # print(s.puzzle.solution.make_list())
+    pass

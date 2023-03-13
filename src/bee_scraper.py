@@ -1,12 +1,13 @@
-from src.bee_classes import BeeParameters,Word,SolutionList,Puzzle,NytBee_Parameters,Sbsolver_Parameters,NytBee_Solution,Sbsolver_Solution,Bee_DataBase
-# from src.google_sheet_classes import Google_Sheet
+from src.bee_classes import Puzzle,NytBee_Parameters,Sbsolver_Parameters,NytBee_Solution,Sbsolver_Solution,Bee_DataBase
 import pandas as pd
 import argparse
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 
-# TODO:
-# remove excess code from the __main__ of al these routines, especially class definitions
-# 
+# TODO: add some error checking to the requests 
+# TODO: write out good data in the case of failure
+# TODO: remove excess code from the __main__ of al these routines, especially class definitions
+# TODO: remove TODOs
+# TODO: write tiny class for missed solutions in its own file
 
 def date_list(start_date,end_date):
     delta = timedelta(days=1)
@@ -48,7 +49,6 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--overwrite",action="store_true",default=False,help="overwrite the entire sheet")
     parser.add_argument("-e", "--end_date",type=str,required=False,default=datetime.today().strftime(Puzzle.date_format),help="end_date; format=2022-01-25 (today if not specified)")
     parser.add_argument("-s", "--start_date",type=str,required=False,default=Sbsolver_Parameters.start_date.strftime(Puzzle.date_format),help="start_date; format=2018-07-29 (first puzzle if not specified)")
-    parser.add_argument("-v", "--verbose",required=False,action="store_true",default=False,help="Not implemented")
     parser.add_argument("-l", "--local",required=False,action="store_true",default=False,help="Write database versions to local files")
     args = parser.parse_args()
     start_date_datetime = datetime.strptime(args.start_date,Puzzle.date_format)
@@ -60,13 +60,6 @@ if __name__ == '__main__':
     db_google_sheet = Bee_DataBase(google_sheet_id=args.id,local=args.local)
     db_dates = db_google_sheet.make_datetime_list()
 
-    # TODO: am I using all the argparses: just verbose is missing
-    # TODO: maybe more pytests
-    # TODO: can I pytest google_sheet_class (currently empty test) or delete test file
-    # TODO: delete the QB test notebook
-    # TODO: delete excess print statements
-    # TODO: warning for missing dates in the finalized db when you validate.
-    
     df = pd.DataFrame()
     for d in date_list(start_date=start_date_datetime,end_date=end_date_datetime):
         if d not in db_dates:
@@ -91,6 +84,8 @@ if __name__ == '__main__':
         df = pd.concat([df, db_google_sheet.df],  ignore_index=False, axis=0) # .sort_values(by='date',ascending=True)
         db_google_sheet.update_df(df)
         db_google_sheet.overwrite()
+    elif len(df)==0:
+        print('Nothing to append')
     else:
         db_google_sheet.append(df)
 

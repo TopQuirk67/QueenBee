@@ -214,7 +214,7 @@ class NytBee_Solution:
                     elif ('tips' in item['attributes']['data'].keys()):
                         todays_lists = item['attributes']['data']['tips']
                     else:
-                        print(f'Error can\'t find word list from nytbee {0} {0}')
+                        print(f'Error can\'t find word list from nytbee')
                         self.puzzle = None
             nytbee = {}
             all_words = []
@@ -321,7 +321,6 @@ class Sbsolver_Solution:
     def get_puzzle_from_input(self,puzzle):
         self.puzzle = puzzle
 
-# TODO:
 @dataclass
 class Bee_DataBase:
     google_sheet_id: str = None
@@ -357,7 +356,6 @@ class Bee_DataBase:
                         'tiles': pd.Series(dtype='str'),
                         'solution': pd.Series(dtype='str'),})
 
-        # TODO? print(self.df['date'].is_monotonic_increasing)
         for _,row in self.df.iterrows():
             try:
                 date = pd.to_datetime(row['date'])

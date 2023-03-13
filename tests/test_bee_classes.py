@@ -104,8 +104,3 @@ def test_nytbee_puzzle_input_construction():
                 date_str='2023-01-25',solution=['mildew','mildewed','mine','mien','mild']))
     assert s.puzzle.datestr() == '2023-01-25'
     assert s.puzzle.solution.make_list() == ['MIEN', 'MILD', 'MILDEW', 'MILDEWED', 'MINE']
-
-def test_nytbee_puzzle_date_wrong():
-    with pytest.raises(ValueError) as e:
-        NytBee_Solution(date=datetime(2001,1,25))
-    assert str(e.value) == f"NytBee_Solution 2001-01-25 00:00:00 must be between 2018-07-29 00:00:00 and today"

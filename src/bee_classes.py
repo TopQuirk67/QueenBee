@@ -56,11 +56,15 @@ class Word:
         elif len(self.word) == BeeParameters.min_tiles:
             return(1)
         else:
-            return(len(self.word))
+            if len(set(self.word))==BeeParameters.max_tiles:
+                return(len(self.word))+BeeParameters.max_tiles
+            else:    
+                return(len(self.word))
     
 @dataclass
 class SolutionList:
     solution: Union[List, List[Word]]
+    alphagram_dictionary: dict = None
         
     def __post_init__(self):
         if isinstance(self.solution,List):
@@ -81,6 +85,9 @@ class SolutionList:
             raise ValueError(f'Must supply a list for the solution')
         # initialization always results in a sorted list. 
         self.solution = self.sort_SolutionList()
+        self.alphagram_dictionary = self.compile_alphagram_dictionary()
+        self.nwords = self.nwords()
+        self.points = self.points()
             
     def __str__(self):
         prt_str = '\n'.join([w.word for w in self.solution])
@@ -97,6 +104,24 @@ class SolutionList:
 
     def make_list_to_string(self):
         return ' '.join(self.make_list())
+    
+    def compile_alphagram_dictionary(self):
+        alphagram_dictionary={}
+        for word in self.solution:
+            if word.alphagram() in alphagram_dictionary.keys():
+                alphagram_dictionary[word.alphagram()].append(word)
+            else:
+                alphagram_dictionary[word.alphagram()] = [word]
+        return alphagram_dictionary
+
+    def nwords(self):
+        return len(self.make_list())
+    
+    def points(self):
+        return sum([w.value() for w in self.solution])
+        
+
+
 
 @dataclass
 class Puzzle:
@@ -135,25 +160,16 @@ class Puzzle:
             self.date = datetime.strptime(self.date_str, self.date_format)
         except:
             raise ValueError(f'Date string {self.date_str} does not match expected date format {self.date_format} ')
-
         
     def __str__(self):
         prt_str = (f"{Color.UNDERLINE}{self.center_tile}{Color.END}{''.join(self.petal_tiles)}\n"
                   f"{self.tiles}\n"
                   f"{self.date_str}\n"
                   f"{self.solution}\n")
-        return prt_str
-    
+        return prt_str    
     
     def alphagram_solutions(self):
-        alph_dict = {}
-        for word in self.solution.solution:
-            key = word.alphagram()
-            if key in alph_dict.keys():
-                alph_dict[key].append(word)
-            else:
-                alph_dict[key]=[word]
-        return alph_dict
+        return self.solution.alphagram_dictionary
     
     def datestr(self):
         return(self.date.strftime(self.date_format))
@@ -363,6 +379,9 @@ class Bee_DataBase:
                 solution = row['solution'].split(' ')
                 tiles = row['tiles']
                 puzzle = Puzzle(tiles=tiles,date_str=date_str,solution=solution)
+                # Note that rather than writing out the whole class, we only write out the datestr, tiles, and solution string because
+                # when we use the google_sheet_class to update, we must go through a serializer that 
+                # cannot accomodate unusual classes like the Puzzle Class
                 d = {'date': [puzzle.date_str], 'tiles':[puzzle.tiles], 'solution':[puzzle.solution.make_list_to_string()]}
                 df = pd.concat([df, pd.DataFrame.from_dict(d, orient='columns')],  ignore_index=False, axis=0)
             except:

@@ -85,7 +85,8 @@ I have a tiny website that tells you what the lengths of the words you are missi
 
 
 ## TODO:
-- improve the SolutionsList class to create dictionary of alphagrams and associated words in that solutions list; propagate to Puzzle class
+- improve the SolutionsList class to create dictionary of alphagrams and associated words in that solutions list; propagate to Puzzle class. 
+- possible create an alphagram dictionary database would include current list of valid words from alphagram along with removals and additions and their date(s)
 - improved date tracking with datetimes / datetimestrings in Bee_DataBase class.
 - improve the error handling around refused connections.  If you are running over a large data set, the program just crashes!  It would be better to write out the data you already have when this happens so that it can pick up where it left off later.
 

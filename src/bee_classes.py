@@ -60,6 +60,14 @@ class Word:
                 return(len(self.word))+BeeParameters.max_tiles
             else:    
                 return(len(self.word))
+            
+    def validinpuzzle(self,puzzle_tiles):
+        p = puzzle_tiles.upper()
+        if len(set(self.alphagram()).intersection(set(p)))==self.countdistinct() and p[0] in self.alphagram():
+            return True
+        else:
+            return False
+    
     
 @dataclass
 class SolutionList:

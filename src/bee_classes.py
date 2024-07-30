@@ -187,6 +187,7 @@ class Puzzle:
 
 class NytBee_Parameters:
     start_date = datetime(2018, 7, 29)
+    old_school_end_date = datetime(2024, 7, 27)
 
 @dataclass
 class NytBee_Solution:
@@ -247,12 +248,16 @@ class NytBee_Solution:
                     nletters = len(list_nletters[0])
                     nwords   = len(list_nletters)
                     for word in list_nletters:
-                        all_words.append(word)
+                        all_words.append(word.strip())
                     nytbee[nletters]=nwords
-                    
+
             x1 = soup.find_all('script', type='text/javascript')
-            if len(x1)>=5:
-                x1 = x1[5]
+            if self.date <= NytBee_Parameters.old_school_end_date:
+                soup_index = 5
+            else:
+                soup_index = 7
+            if len(x1)>=soup_index:
+                x1 = x1[soup_index]
                 regex = 'var docs_json = \'(.+?)\';'
                 y1 = json.loads(re.findall(regex,str(x1))[0])
                 key = [k for k in y1.keys()][0]
@@ -260,25 +265,26 @@ class NytBee_Solution:
                     if 'data' in item['attributes'].keys():
                         center_tile = (chr(item['attributes']['data']['color'].index('firebrick')+ord('a')))
 
-                x2 = soup.find_all('script', type='text/javascript')[6]
+                x2 = soup.find_all('script', type='text/javascript')[soup_index+1]
                 y2 = json.loads(re.findall(regex,str(x2))[0])
                 key = [k for k in y2.keys()][0]
                 for item in y2[key]['roots']['references']:
                     if 'data' in item['attributes'].keys():
                         colors = item['attributes']['data']['color']
                         puzz_tiles = [chr(idx+ord('a')) for idx,color in enumerate(colors) if color=='firebrick']
-                        # center_tile = (chr(item['attributes']['data']['color'].index('firebrick')+ord('a')))
+
             else:
                 center_tile = set(all_words[0])
                 for word in all_words:
                     center_tile = center_tile.intersection(set(word))
                 center_tile = ''.join(list(center_tile))
                 
-            puzz_tiles = list(set(''.join(all_words))-set(center_tile))
-            puzz_tiles.sort()
-            puzz_tiles.insert(0,center_tile)
-            if len(puzz_tiles)!=BeeParameters.max_tiles or len(center_tile)!=1:
-                print(f'Error scraping puzzle tiles {puzz_tiles} {center_tile}')
+                puzz_tiles = list(set(''.join(all_words))-set(center_tile))
+                puzz_tiles.sort()
+                puzz_tiles.insert(0,center_tile)
+                if len(puzz_tiles)!=BeeParameters.max_tiles or len(center_tile)!=1:
+                    print(f'Error scraping puzzle tiles {puzz_tiles} {center_tile}')
+                    self.puzzle = None
 
             puzz_tiles.remove(center_tile)
             puzz_tiles.sort()

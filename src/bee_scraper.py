@@ -49,7 +49,7 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--overwrite",action="store_true",default=False,help="overwrite the entire sheet")
     parser.add_argument("-e", "--end_date",type=str,required=False,default=datetime.today().strftime(Puzzle.date_format),help="end_date; format=2022-01-25 (today if not specified)")
     parser.add_argument("-s", "--start_date",type=str,required=False,default=Sbsolver_Parameters.start_date.strftime(Puzzle.date_format),help="start_date; format=2018-07-29 (first puzzle if not specified)")
-    parser.add_argument("-l", "--local",required=False,action="store_true",default=False,help="Write database versions to local files")
+    parser.add_argument("-l", "--local",required=False,action="store_true",default=True,help="Write database versions to local files")
     args = parser.parse_args()
     start_date_datetime = datetime.strptime(args.start_date,Puzzle.date_format)
     earliest_possible_date = min(Sbsolver_Parameters.start_date,NytBee_Parameters.start_date)
@@ -66,20 +66,27 @@ if __name__ == '__main__':
             print(f'fetching data for date {d}')
             nyt = NytBee_Solution(date=d)
             nyt.get_puzzle_from_url()
-            sbs = Sbsolver_Solution(date=d)
-            sbs.get_puzzle_from_url()
-            if sbs.puzzle is None and nyt.puzzle is None:
-                print(f'No solution data available for date {d}')
-            elif sbs.puzzle is None:
-                puzzle = nyt.puzzle
-            elif nyt.puzzle is None:
-                puzzle = sbs.puzzle
-            elif nyt.puzzle == sbs.puzzle:
-                puzzle = nyt.puzzle
+            # sbs = Sbsolver_Solution(date=d)
+            # sbs.get_puzzle_from_url()
+            
+            puzzle = None
+            # if sbs.puzzle is None and nyt.puzzle is None:
+            #     print(f'No solution data available for date {d}')
+            # elif sbs.puzzle is None:
+            #     puzzle = nyt.puzzle
+            if nyt.puzzle is None:
+                print(f'No NYTBee solution for date {d}')
+            # elif nyt.puzzle == sbs.puzzle:
+            #     puzzle = nyt.puzzle
+            # else:
+            #     print(f'Mismatched solutions for date {d} \n NYTBee \n {nyt}\n Sbsolver \n {sbs}')
             else:
-                print(f'Mismatched solutions for date {d} \n NYTBee \n {nyt}\n Sbsolver \n {sbs}')
-            d = {'date': [d], 'tiles':[puzzle.tiles], 'solution':[puzzle.solution.make_list_to_string()]}
-            df = pd.concat([df, pd.DataFrame.from_dict(d, orient='columns')],  ignore_index=False, axis=0)
+                puzzle = nyt.puzzle  
+            
+            # Only add to DataFrame if we have a valid puzzle
+            if puzzle is not None:
+                d_dict = {'date': [d], 'tiles':[puzzle.tiles], 'solution':[puzzle.solution.make_list_to_string()]}
+                df = pd.concat([df, pd.DataFrame.from_dict(d_dict, orient='columns')],  ignore_index=False, axis=0)
     if args.overwrite or newly_scraped_dates_prior_to_last_db_date(db_df = db_google_sheet.df, new_df = df):
         df = pd.concat([df, db_google_sheet.df],  ignore_index=False, axis=0) # .sort_values(by='date',ascending=True)
         db_google_sheet.update_df(df)

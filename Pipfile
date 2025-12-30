@@ -4,13 +4,16 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+numpy = "*"
+pandas = "*"
 pytest = "*"
 bs4 = "*"
 requests = "*"
 pytz = "*"
-pandas = "*"
 pygsheets = "*"
 jupyter = "*"
+matplotlib = "*"
+levenshtein = "*"
 
 [dev-packages]
 

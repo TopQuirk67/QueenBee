@@ -298,6 +298,9 @@ class NytBee_Solution:
     def get_puzzle_from_input(self,puzzle):
         self.puzzle = puzzle
 
+SBSOLVER_ANCHOR_ID = 2976
+SBSOLVER_ANCHOR_DATE = datetime(2026, 7, 1)
+
 class Sbsolver_Parameters:
     start_date = datetime(2018, 5, 9)
 
@@ -305,7 +308,8 @@ class Sbsolver_Parameters:
 class Sbsolver_Solution:
     date: datetime
     date_str: str = None
-    waiter_settings: Dict = field(default_factory=lambda: {'t1':1.0,'t2':8.0,'t3':8.0,'t4':17.0, 'maxdepth': 3, 'scaler':1, 'phighbin':0.2,'precursion':0.5})
+    waiter_settings: Dict = field(default_factory=lambda: {'maxdepth': 3, 'scaler':1, 'phighbin':0.2,'precursion':0.5})
+
     def __post_init__(self):
         if not isinstance(self.date,datetime):
             raise ValueError(f'Sbsolver_Solution {self.date} must be a datetime')
@@ -314,41 +318,79 @@ class Sbsolver_Solution:
         self.puzzle = None
 
     def __str__(self):
-        return f'Sbsolver_Solution for {self.date}\n url: {self.urlstring()}\n {self.urlstring()}\n {self.puzzle}'
-    
+        return f'Sbsolver_Solution for {self.date}\n url: {self.urlstring()}\n {self.puzzle}'
+
     def translate_date_to_index(self):
-        return 1+(self.date-Sbsolver_Parameters.start_date).days
-    
+        return SBSOLVER_ANCHOR_ID + (self.date - SBSOLVER_ANCHOR_DATE).days
+
     def urlstring(self):
         return f"https://www.sbsolver.com/s/{self.translate_date_to_index()}"
-    
-    def get_puzzle_from_url(self):
 
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0',
-        }
+    def get_puzzle_from_url(self):
+        from playwright.sync_api import sync_playwright
+        url = self.urlstring()
         if self.waiter_settings is not None:
             recursive_waiter(**self.waiter_settings)
-        page = requests.get(self.urlstring(), headers=headers)
-        soup = BeautifulSoup(page.text, 'html.parser')
-
-        if page.status_code != 200:
-            print(f'Error fetching page {self.urlstring()}')
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                pw_page = browser.new_page()
+                response = pw_page.goto(url, wait_until='domcontentloaded', timeout=15000)
+                if response is None or response.status != 200:
+                    status = response.status if response else 'no response'
+                    print(f'Error fetching sbsolver page {url} (status {status})')
+                    self.puzzle = None
+                    browser.close()
+                    return None
+                html = pw_page.content()
+                browser.close()
+        except Exception as e:
+            print(f'Error fetching sbsolver page {url}: {e}')
             self.puzzle = None
             return None
 
-        puzz_tiles = soup.find('input')['value']    
-        all_words = [item.a['href'].split('/')[-1] for item in soup.find_all('td', {"class": "bee-hover"})]
-        self.extracted_date = datetime.strptime(soup.find("meta", property="og:title")['content'].split(':')[0] ,'%B %d, %Y')
-        if self.extracted_date!=self.date:
-            print(f'Error scraping Sbsolver date mismatch {self.extracted_date} {self.date}')
-        if len(puzz_tiles)!=BeeParameters.max_tiles :
-            print(f'Error scraping puzzle tiles {puzz_tiles}')
+        soup = BeautifulSoup(html, 'html.parser')
 
-        date_str=self.date.strftime(Puzzle.date_format)
-        self.puzzle = Puzzle(tiles=puzz_tiles,solution=all_words,date_str=date_str)
+        # Verify date matches
+        date_span = soup.find('span', class_='bee-current')
+        if date_span:
+            date_text = date_span.get_text().replace('Spelling Bee for ', '').strip()
+            try:
+                self.extracted_date = datetime.strptime(date_text, '%B %d, %Y')
+                if self.extracted_date != self.date:
+                    print(f'Error scraping Sbsolver date mismatch {self.extracted_date} {self.date}')
+                    self.puzzle = None
+                    return None
+            except ValueError:
+                print(f'Error parsing sbsolver date text: {date_text}')
+                self.puzzle = None
+                return None
+        # Extract letters — uppercase char is center tile
+        letter_input = soup.find('input', id='string')
+        if not letter_input:
+            print(f'Error: could not find letter input on sbsolver page {self.urlstring()}')
+            self.puzzle = None
+            return None
+        raw_tiles = letter_input['value']
+        center_tile = next((c for c in raw_tiles if c.isupper()), None)
+        if center_tile is None or len(raw_tiles) != BeeParameters.max_tiles:
+            print(f'Error scraping sbsolver puzzle tiles: {raw_tiles}')
+            self.puzzle = None
+            return None
+        petal_tiles = [c.upper() for c in raw_tiles if c != center_tile]
+        puzz_tiles = center_tile + ''.join(sorted(petal_tiles))
 
-    def get_puzzle_from_input(self,puzzle):
+        # Extract word list
+        all_words = [a.get_text().lower() for a in soup.select('td.bee-hover a[href*="/h/"]')]
+        if len(all_words) == 0:
+            print(f'Error: no words found on sbsolver page {self.urlstring()}')
+            self.puzzle = None
+            return None
+
+        date_str = self.date.strftime(Puzzle.date_format)
+        self.puzzle = Puzzle(tiles=puzz_tiles, solution=all_words, date_str=date_str)
+
+    def get_puzzle_from_input(self, puzzle):
         self.puzzle = puzzle
 
 @dataclass

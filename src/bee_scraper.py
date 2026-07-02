@@ -66,22 +66,28 @@ if __name__ == '__main__':
             print(f'fetching data for date {d}')
             nyt = NytBee_Solution(date=d)
             nyt.get_puzzle_from_url()
-            # sbs = Sbsolver_Solution(date=d)
-            # sbs.get_puzzle_from_url()
-            
+            sbs = Sbsolver_Solution(date=d)
+            sbs.get_puzzle_from_url()
+
             puzzle = None
-            # if sbs.puzzle is None and nyt.puzzle is None:
-            #     print(f'No solution data available for date {d}')
-            # elif sbs.puzzle is None:
-            #     puzzle = nyt.puzzle
-            if nyt.puzzle is None:
-                print(f'No NYTBee solution for date {d}')
-            # elif nyt.puzzle == sbs.puzzle:
-            #     puzzle = nyt.puzzle
-            # else:
-            #     print(f'Mismatched solutions for date {d} \n NYTBee \n {nyt}\n Sbsolver \n {sbs}')
+            if nyt.puzzle is not None and sbs.puzzle is not None:
+                nyt_words = set(nyt.puzzle.solution.make_list())
+                sbs_words = set(sbs.puzzle.solution.make_list())
+                if nyt_words == sbs_words:
+                    print(f'  [{d.date()}] OK: both sources agree ({len(nyt_words)} words)')
+                    puzzle = nyt.puzzle
+                else:
+                    diff = nyt_words.symmetric_difference(sbs_words)
+                    print(f'  [{d.date()}] **MISMATCH** between nytbee and sbsolver -- differing words: {", ".join(sorted(diff)).upper()}')
+                    puzzle = nyt.puzzle
+            elif nyt.puzzle is not None:
+                print(f'  [{d.date()}] nytbee only (sbsolver unavailable)')
+                puzzle = nyt.puzzle
+            elif sbs.puzzle is not None:
+                print(f'  [{d.date()}] sbsolver only (nytbee unavailable)')
+                puzzle = sbs.puzzle
             else:
-                puzzle = nyt.puzzle  
+                print(f'  [{d.date()}] No solution available from either source')
             
             # Only add to DataFrame if we have a valid puzzle
             if puzzle is not None:
